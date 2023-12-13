@@ -1,16 +1,22 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import sys
+import time
 
 from collections import namedtuple
 Item = namedtuple("Item", ['index', 'value', 'weight', 'valuePerWeight'])
 
-valueSolution = 0
-takenSolution = []
-sortedItems = []
+interrupted = False
+
+class Solution:
+    def __init__(self, valueSolution, takenSolution, sortedItems, interrupted):
+        self.valueSolution = valueSolution
+        self.takenSolution = takenSolution
+        self.sortedItems = sortedItems
+        self.interrupted = interrupted
 
 class Node:
-    def __init__(self, item, spaceLeft, bestExpectedValue, bestTakenItems, takenItems, currentValue, sortedIndex, partialItemIndex, partialItemValue, partialItemSpace):
+    def __init__(self, item, spaceLeft, bestExpectedValue, bestTakenItems, takenItems, currentValue, sortedIndex, partialItemIndex, partialItemValue, partialItemSpace, startTime, solution):
         self.item = item
         self.spaceLeft = spaceLeft
         self.bestExpectedValue = bestExpectedValue
@@ -21,13 +27,14 @@ class Node:
         self.partialItemIndex = partialItemIndex
         self.partialItemValue = partialItemValue
         self.partialItemSpace = partialItemSpace
+        self.startTime = startTime
+        self.solution = solution
 
     def dfs(self):
-        global valueSolution
-        global takenSolution
-        global sortedItems
-        #print('sortedIndex: ' + str(self.sortedIndex) + ', bestExpectedValue: ' + str(self.bestExpectedValue) + ', valueSolution: ' + str(valueSolution))
-        if self.bestExpectedValue < valueSolution:
+        if time.time() - self.startTime > 5:
+            self.solution.interrupted = True
+            return
+        if self.bestExpectedValue < self.solution.valueSolution:
             return
         addedValue = self.tryTakeItem()
         if addedValue == -1:
@@ -37,13 +44,13 @@ class Node:
         # first take the item (left side of tree)
         newCurrentValue = self.currentValue + addedValue
         newSpaceLeft = self.spaceLeft - self.item.weight
-        self.takenItems[self.item.index] = 1 # remember to set to 0 when leaving
-        if self.sortedIndex == len(sortedItems) - 1:
-            if newCurrentValue > valueSolution:
-                valueSolution = newCurrentValue
-                takenSolution = list(self.takenItems)
+        self.takenItems[self.item.index] = 1
+        if self.sortedIndex == len(self.solution.sortedItems) - 1:
+            if newCurrentValue > self.solution.valueSolution:
+                self.solution.valueSolution = newCurrentValue
+                self.solution.takenSolution = list(self.takenItems)
         else:
-            nextNode = Node(sortedItems[self.sortedIndex + 1], newSpaceLeft, self.bestExpectedValue, self.bestTakenItems, self.takenItems, newCurrentValue, self.sortedIndex + 1, self.partialItemIndex, self.partialItemValue, self.partialItemSpace)
+            nextNode = Node(self.solution.sortedItems[self.sortedIndex + 1], newSpaceLeft, self.bestExpectedValue, self.bestTakenItems, self.takenItems, newCurrentValue, self.sortedIndex + 1, self.partialItemIndex, self.partialItemValue, self.partialItemSpace, self.startTime, self.solution)
             nextNode.dfs()
 
         self.takenItems[self.item.index] = 0
@@ -58,22 +65,16 @@ class Node:
             return self.item.value
 
     def leaveItem(self):
-        global valueSolution
-        global takenSolution
-        global sortedItems
-        if self.sortedIndex == len(sortedItems) - 1:
-            if self.currentValue > valueSolution:
-                valueSolution = self.currentValue
-                takenSolution = list(self.takenItems)
+        if self.sortedIndex == len(self.solution.sortedItems) - 1:
+            if self.currentValue > self.solution.valueSolution:
+                self.solution.valueSolution = self.currentValue
+                self.solution.takenSolution = list(self.takenItems)
         else:
             self.recalculateBestExpectedSolution()
-            nextNode = Node(sortedItems[self.sortedIndex + 1], self.spaceLeft, self.bestExpectedValue, self.bestTakenItems, self.takenItems, self.currentValue, self.sortedIndex + 1, self.partialItemIndex, self.partialItemValue, self.partialItemSpace)
-            #print(str(nextNode.partialItemIndex))
+            nextNode = Node(self.solution.sortedItems[self.sortedIndex + 1], self.spaceLeft, self.bestExpectedValue, self.bestTakenItems, self.takenItems, self.currentValue, self.sortedIndex + 1, self.partialItemIndex, self.partialItemValue, self.partialItemSpace, self.startTime, self.solution)
             nextNode.dfs()
 
     def recalculateBestExpectedSolution(self):
-        global sortedItems
-        #print(str(self.bestTakenItems))
         if self.bestTakenItems[self.item.index] == 0:
             return
         elif self.bestTakenItems[self.item.index] == 1:
@@ -82,17 +83,17 @@ class Node:
             self.bestExpectedValue -= self.partialItemValue
             roomLeft = self.partialItemSpace + self.item.weight
             
-            while(self.partialItemIndex < len(sortedItems) and roomLeft >= sortedItems[self.partialItemIndex].weight):
-                self.bestExpectedValue += sortedItems[self.partialItemIndex].value
-                self.bestTakenItems[sortedItems[self.partialItemIndex].index] = 1
-                roomLeft -= sortedItems[self.partialItemIndex].weight
+            while(self.partialItemIndex < len(self.solution.sortedItems) and roomLeft >= self.solution.sortedItems[self.partialItemIndex].weight):
+                self.bestExpectedValue += self.solution.sortedItems[self.partialItemIndex].value
+                self.bestTakenItems[self.solution.sortedItems[self.partialItemIndex].index] = 1
+                roomLeft -= self.solution.sortedItems[self.partialItemIndex].weight
                 self.partialItemIndex += 1
             
-            if self.partialItemIndex == len(sortedItems):
+            if self.partialItemIndex == len(self.solution.sortedItems):
                 return
 
-            self.bestTakenItems[sortedItems[self.partialItemIndex].index] = 2
-            self.partialItemValue = roomLeft * sortedItems[self.partialItemIndex].valuePerWeight
+            self.bestTakenItems[self.solution.sortedItems[self.partialItemIndex].index] = 2
+            self.partialItemValue = roomLeft * self.solution.sortedItems[self.partialItemIndex].valuePerWeight
             self.bestExpectedValue += self.partialItemValue
             self.partialItemSpace = roomLeft
             return
@@ -102,18 +103,17 @@ class Node:
             self.partialItemIndex += 1
             roomLeft = self.partialItemSpace
             
-            while(self.partialItemIndex < len(sortedItems) and roomLeft >= sortedItems[self.partialItemIndex].weight):
-                self.bestExpectedValue += sortedItems[self.partialItemIndex].value
-                self.bestTakenItems[sortedItems[self.partialItemIndex].index] = 1
-                roomLeft -= sortedItems[self.partialItemIndex].weight
+            while(self.partialItemIndex < len(self.solution.sortedItems) and roomLeft >= self.solution.sortedItems[self.partialItemIndex].weight):
+                self.bestExpectedValue += self.solution.sortedItems[self.partialItemIndex].value
+                self.bestTakenItems[self.solution.sortedItems[self.partialItemIndex].index] = 1
+                roomLeft -= self.solution.sortedItems[self.partialItemIndex].weight
                 self.partialItemIndex += 1
 
-            if self.partialItemIndex == len(sortedItems):
+            if self.partialItemIndex == len(self.solution.sortedItems):
                 return
 
-            self.bestTakenItems[sortedItems[self.partialItemIndex].index] = 2
-            #print('setting partialItemIndex to ' + str(self.partialItemIndex))
-            self.partialItemValue = roomLeft * sortedItems[self.partialItemIndex].valuePerWeight
+            self.bestTakenItems[self.solution.sortedItems[self.partialItemIndex].index] = 2
+            self.partialItemValue = roomLeft * self.solution.sortedItems[self.partialItemIndex].valuePerWeight
             self.bestExpectedValue += self.partialItemValue
             self.partialItemSpace = roomLeft
             return
@@ -123,9 +123,6 @@ class Node:
 
 def solve_it(input_data):
     # Modify this code to run your optimization algorithm
-    global valueSolution
-    global takenSolution
-    global sortedItems
     sys.setrecursionlimit(20000)
 
     # parse the input
@@ -143,7 +140,6 @@ def solve_it(input_data):
         items.append(Item(i-1, int(parts[0]), int(parts[1]), float(parts[0])/float(parts[1])))
 
     sortedItems = sorted(items, key=lambda item: (item.valuePerWeight, -item.weight), reverse=True)
-    #print(sortedItems)
 
     takenSolution = [0]*len(items)
     bestPossibleTaken = [0]*len(items)
@@ -162,13 +158,19 @@ def solve_it(input_data):
     partialValue = partialItem.valuePerWeight * room
     bestPossibleTaken[partialItem.index] = 2
     bestPossibleValue += partialValue
+    startTime = time.time()
+    solution = Solution(0, takenSolution, sortedItems, False)
 
-    rootNode = Node(sortedItems[0], capacity, bestPossibleValue, bestPossibleTaken, taken, 0, 0, i, partialValue, room)
+    rootNode = Node(sortedItems[0], capacity, bestPossibleValue, bestPossibleTaken, taken, 0, 0, i, partialValue, room, startTime, solution)
     rootNode.dfs()
     
     # prepare the solution in the specified output format
-    output_data = str(valueSolution) + ' ' + str(0) + '\n'
-    output_data += ' '.join(map(str, takenSolution))
+    if rootNode.solution.interrupted:
+        output_data = str(rootNode.solution.valueSolution) + ' ' + str(0) + '\n'
+        output_data += ' '.join(map(str, rootNode.solution.takenSolution))
+    else:
+        output_data = str(rootNode.solution.valueSolution) + ' ' + str(1) + '\n'
+        output_data += ' '.join(map(str, rootNode.solution.takenSolution))
     return output_data
 
 
